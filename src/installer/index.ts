@@ -32,13 +32,23 @@ function writeHook(filename: string, script: string): void {
   fs.chmodSync(filename, 0o0755)
 }
 
-function createHook(filename: string, script: string): void {
+function createHook(
+  filename: string,
+  script: string,
+  overwriteExisting: boolean
+): void {
   // Get name, used for logging
   const name = path.basename(filename)
 
   // Check if hook exist
   if (fs.existsSync(filename)) {
     const hook = fs.readFileSync(filename, 'utf-8')
+
+    // Overwrite
+    if (overwriteExisting) {
+      console.log(`overwriting existing ghooks script: ${name}`)
+      return writeHook(filename, script)
+    }
 
     // Migrate
     if (isGhooks(hook)) {
@@ -66,8 +76,14 @@ function createHook(filename: string, script: string): void {
   writeHook(filename, script)
 }
 
-function createHooks(filenames: string[], script: string): void {
-  filenames.forEach((filename: string): void => createHook(filename, script))
+function createHooks(
+  filenames: string[],
+  script: string,
+  overwriteExisting: boolean
+): void {
+  filenames.forEach((filename: string): void =>
+    createHook(filename, script, overwriteExisting)
+  )
 }
 
 function canRemove(filename: string): boolean {
@@ -100,8 +116,12 @@ function isInNodeModules(dir: string): boolean {
   return (dir.match(/node_modules/g) || []).length > 1
 }
 
+function getGitHooksDir(gitDir: string): string {
+  return path.join(gitDir, 'hooks')
+}
+
 function getHooks(gitDir: string): string[] {
-  const gitHooksDir = path.join(gitDir, 'hooks')
+  const gitHooksDir = getGitHooksDir(gitDir)
   return hookList.map((hookName: string): string =>
     path.join(gitHooksDir, hookName)
   )
@@ -137,14 +157,6 @@ export function install(
   const conf = getConf(userPkgDir)
 
   // Checks
-  if (['1', 'true'].includes(process.env.HUSKY_SKIP_INSTALL || '')) {
-    console.log(
-      "HUSKY_SKIP_INSTALL environment variable is set to 'true',",
-      'skipping Git hooks installation.'
-    )
-    return
-  }
-
   if (isCI && conf.skipCI) {
     console.log('CI detected, skipping Git hooks installation.')
     return
@@ -158,16 +170,14 @@ export function install(
   }
 
   // Create hooks directory if it doesn't exist
-  const gitHooksDir = path.join(gitDir, 'hooks')
+  const gitHooksDir = getGitHooksDir(gitDir)
   if (!fs.existsSync(gitHooksDir)) {
     fs.mkdirSync(gitHooksDir)
   }
 
   const hooks = getHooks(gitDir)
   const script = getScript(topLevel, huskyDir, requireRunNodePath)
-  createHooks(hooks, script)
-
-  console.log(`husky > Done`)
+  createHooks(hooks, script, conf.overwriteExisting)
 }
 
 export function uninstall(gitDir: string, huskyDir: string): void {
@@ -188,6 +198,4 @@ export function uninstall(gitDir: string, huskyDir: string): void {
   // Remove hooks
   const hooks = getHooks(gitDir)
   removeHooks(hooks)
-
-  console.log('husky > Done')
 }
